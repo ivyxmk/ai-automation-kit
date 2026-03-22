@@ -1,0 +1,195 @@
+{
+  "name": "AI Meeting Summarizer",
+  "description": "Transform meeting transcripts into structured summaries with action items and follow-ups",
+  "version": "1.0.0",
+  
+  "trigger": {
+    "type": "manual",
+    "alternatives": ["webhook", "file_upload", "calendar_event_ended"]
+  },
+  
+  "inputs": {
+    "transcript": {
+      "type": "string",
+      "required": true,
+      "description": "Raw meeting transcript or notes"
+    },
+    "meeting_title": {
+      "type": "string",
+      "required": false,
+      "description": "Meeting title/subject"
+    },
+    "attendees": {
+      "type": "array",
+      "required": false,
+      "description": "List of attendee names/emails"
+    },
+    "meeting_date": {
+      "type": "datetime",
+      "required": false,
+      "default": "{{now}}"
+    }
+  },
+  
+  "steps": [
+    {
+      "id": "summarize",
+      "name": "Generate Summary",
+      "action": "llm_call",
+      "inputs": {
+        "prompt_template": "meeting-summarizer",
+        "variables": {
+          "transcript": "{{inputs.transcript}}",
+          "title": "{{inputs.meeting_title}}",
+          "attendees": "{{inputs.attendees}}"
+        }
+      },
+      "outputs": {
+        "executive_summary": "string",
+        "key_points": "array",
+        "decisions_made": "array",
+        "topics_discussed": "array"
+      }
+    },
+    {
+      "id": "extract_actions",
+      "name": "Extract Action Items",
+      "action": "llm_call",
+      "inputs": {
+        "prompt_template": "action-item-extractor",
+        "variables": {
+          "transcript": "{{inputs.transcript}}",
+          "attendees": "{{inputs.attendees}}"
+        }
+      },
+      "outputs": {
+        "action_items": {
+          "type": "array",
+          "items": {
+            "task": "string",
+            "assignee": "string",
+            "due_date": "string|null",
+            "priority": "high|medium|low",
+            "context": "string"
+          }
+        }
+      }
+    },
+    {
+      "id": "identify_followups",
+      "name": "Identify Follow-ups Needed",
+      "action": "llm_call",
+      "inputs": {
+        "prompt_template": "followup-identifier",
+        "variables": {
+          "transcript": "{{inputs.transcript}}",
+          "decisions": "{{summarize.decisions_made}}"
+        }
+      },
+      "outputs": {
+        "followups": {
+          "type": "array",
+          "items": {
+            "type": "meeting|email|document|research",
+            "description": "string",
+            "stakeholders": "array",
+            "suggested_timeframe": "string"
+          }
+        }
+      }
+    },
+    {
+      "id": "draft_email",
+      "name": "Draft Follow-up Email",
+      "action": "llm_call",
+      "inputs": {
+        "prompt_template": "meeting-followup-email",
+        "variables": {
+          "title": "{{inputs.meeting_title}}",
+          "date": "{{inputs.meeting_date}}",
+          "summary": "{{summarize.executive_summary}}",
+          "key_points": "{{summarize.key_points}}",
+          "action_items": "{{extract_actions.action_items}}",
+          "attendees": "{{inputs.attendees}}"
+        }
+      },
+      "outputs": {
+        "subject": "string",
+        "body": "string"
+      }
+    },
+    {
+      "id": "create_tasks",
+      "name": "Create Tasks (Optional)",
+      "action": "conditional",
+      "conditions": [
+        {
+          "if": "{{config.create_tasks}} == true AND {{extract_actions.action_items.length}} > 0",
+          "then": {
+            "action": "loop",
+            "over": "{{extract_actions.action_items}}",
+            "do": {
+              "action": "create_task",
+              "inputs": {
+                "title": "{{item.task}}",
+                "assignee": "{{item.assignee}}",
+                "due_date": "{{item.due_date}}",
+                "priority": "{{item.priority}}",
+                "notes": "From meeting: {{inputs.meeting_title}}\n\nContext: {{item.context}}",
+                "tags": ["meeting-action", "{{inputs.meeting_title}}"]
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "save_summary",
+      "name": "Save Summary Document",
+      "action": "create_document",
+      "inputs": {
+        "title": "Meeting Notes: {{inputs.meeting_title}} - {{inputs.meeting_date | date:'YYYY-MM-DD'}}",
+        "content": {
+          "template": "meeting-notes-template",
+          "variables": {
+            "title": "{{inputs.meeting_title}}",
+            "date": "{{inputs.meeting_date}}",
+            "attendees": "{{inputs.attendees}}",
+            "summary": "{{summarize.executive_summary}}",
+            "topics": "{{summarize.topics_discussed}}",
+            "key_points": "{{summarize.key_points}}",
+            "decisions": "{{summarize.decisions_made}}",
+            "action_items": "{{extract_actions.action_items}}",
+            "followups": "{{identify_followups.followups}}"
+          }
+        },
+        "format": "markdown"
+      }
+    }
+  ],
+  
+  "outputs": {
+    "summary": "{{summarize}}",
+    "action_items": "{{extract_actions.action_items}}",
+    "followups": "{{identify_followups.followups}}",
+    "email_draft": "{{draft_email}}",
+    "document_path": "{{save_summary.path}}",
+    "tasks_created": "{{create_tasks.results}}"
+  },
+  
+  "config": {
+    "llm_provider": "openai",
+    "llm_model": "gpt-4o-mini",
+    "create_tasks": false,
+    "task_provider": "todoist",
+    "document_storage": "notion",
+    "max_retries": 3,
+    "timeout_seconds": 60
+  },
+  
+  "integrations": {
+    "supported_task_managers": ["todoist", "asana", "linear", "notion", "trello"],
+    "supported_doc_storage": ["notion", "google_docs", "confluence", "local"],
+    "supported_calendars": ["google_calendar", "outlook", "cal.com"]
+  }
+}

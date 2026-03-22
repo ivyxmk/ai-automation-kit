@@ -1,0 +1,150 @@
+{
+  "name": "AI Lead Qualification",
+  "description": "Instantly qualify and score inbound leads",
+  "version": "1.0.0",
+  
+  "trigger": {
+    "type": "webhook",
+    "source": "form_submission | crm_new_lead | chat_widget"
+  },
+  
+  "steps": [
+    {
+      "id": "enrich",
+      "name": "Enrich Lead Data",
+      "action": "parallel",
+      "tasks": [
+        {
+          "id": "company_lookup",
+          "action": "api_call",
+          "service": "clearbit | apollo | hunter",
+          "inputs": {
+            "domain": "{{trigger.email_domain}}"
+          }
+        },
+        {
+          "id": "linkedin_lookup",
+          "action": "api_call",
+          "service": "proxycurl | phantombuster",
+          "inputs": {
+            "email": "{{trigger.email}}"
+          },
+          "optional": true
+        }
+      ]
+    },
+    {
+      "id": "qualify",
+      "name": "AI Qualification",
+      "action": "llm_call",
+      "inputs": {
+        "prompt_template": "lead-qualifier",
+        "variables": {
+          "lead_info": "{{trigger}}",
+          "company_data": "{{enrich.company_lookup}}",
+          "linkedin_data": "{{enrich.linkedin_lookup}}"
+        }
+      },
+      "outputs": {
+        "score": "0-100",
+        "tier": "hot|warm|cold|disqualified",
+        "icp_match": "boolean",
+        "buying_signals": "array",
+        "objections_likely": "array",
+        "recommended_approach": "string",
+        "urgency": "high|medium|low"
+      }
+    },
+    {
+      "id": "route_lead",
+      "name": "Route to Sales",
+      "action": "conditional",
+      "conditions": [
+        {
+          "if": "{{qualify.tier}} == 'hot'",
+          "then": {
+            "action": "assign_to",
+            "target": "senior_ae",
+            "priority": "immediate",
+            "notify": ["slack", "email", "sms"]
+          }
+        },
+        {
+          "if": "{{qualify.tier}} == 'warm'",
+          "then": {
+            "action": "assign_to",
+            "target": "sdr_team",
+            "priority": "same_day"
+          }
+        },
+        {
+          "if": "{{qualify.tier}} == 'cold'",
+          "then": {
+            "action": "add_to_sequence",
+            "sequence": "nurture_campaign"
+          }
+        },
+        {
+          "if": "{{qualify.tier}} == 'disqualified'",
+          "then": {
+            "action": "tag",
+            "tags": ["disqualified", "{{qualify.disqualification_reason}}"]
+          }
+        }
+      ]
+    },
+    {
+      "id": "personalize",
+      "name": "Generate Personalized Outreach",
+      "action": "conditional",
+      "conditions": [
+        {
+          "if": "{{qualify.tier}} IN ['hot', 'warm']",
+          "then": {
+            "action": "llm_call",
+            "prompt_template": "outreach-personalizer",
+            "variables": {
+              "lead": "{{trigger}}",
+              "company": "{{enrich.company_lookup}}",
+              "qualification": "{{qualify}}"
+            },
+            "outputs": {
+              "email_draft": "string",
+              "linkedin_message": "string",
+              "talking_points": "array"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "update_crm",
+      "name": "Update CRM",
+      "action": "crm_update",
+      "inputs": {
+        "lead_id": "{{trigger.id}}",
+        "fields": {
+          "lead_score": "{{qualify.score}}",
+          "lead_tier": "{{qualify.tier}}",
+          "enrichment_data": "{{enrich}}",
+          "ai_insights": "{{qualify}}",
+          "personalized_outreach": "{{personalize}}"
+        }
+      }
+    }
+  ],
+  
+  "outputs": {
+    "lead_score": "{{qualify.score}}",
+    "tier": "{{qualify.tier}}",
+    "assigned_to": "{{route_lead.target}}",
+    "outreach_ready": "{{personalize}}"
+  },
+  
+  "config": {
+    "llm_provider": "openai",
+    "llm_model": "gpt-4o",
+    "enrichment_timeout": 10,
+    "max_enrichment_cost": 0.50
+  }
+}

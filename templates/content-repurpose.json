@@ -1,0 +1,171 @@
+{
+  "name": "AI Content Repurposing Pipeline",
+  "description": "Transform one piece of content into multiple formats automatically",
+  "version": "1.0.0",
+  
+  "trigger": {
+    "type": "manual | rss_new_item | notion_page_created | google_doc_updated",
+    "inputs": {
+      "source_content": "string",
+      "source_type": "blog_post | video_transcript | podcast_transcript | thread | newsletter"
+    }
+  },
+  
+  "steps": [
+    {
+      "id": "analyze",
+      "name": "Analyze Source Content",
+      "action": "llm_call",
+      "inputs": {
+        "prompt_template": "content-analyzer",
+        "variables": {
+          "content": "{{trigger.source_content}}",
+          "type": "{{trigger.source_type}}"
+        }
+      },
+      "outputs": {
+        "main_topic": "string",
+        "key_points": "array",
+        "quotes": "array",
+        "statistics": "array",
+        "tone": "string",
+        "target_audience": "string",
+        "word_count": "number"
+      }
+    },
+    {
+      "id": "generate_twitter",
+      "name": "Generate Twitter Thread",
+      "action": "llm_call",
+      "inputs": {
+        "prompt_template": "twitter-thread-generator",
+        "variables": {
+          "analysis": "{{analyze}}",
+          "original": "{{trigger.source_content}}"
+        }
+      },
+      "outputs": {
+        "hook_tweet": "string (max 280 chars)",
+        "thread_tweets": "array of strings",
+        "cta_tweet": "string"
+      }
+    },
+    {
+      "id": "generate_linkedin",
+      "name": "Generate LinkedIn Post",
+      "action": "llm_call",
+      "inputs": {
+        "prompt_template": "linkedin-post-generator",
+        "variables": {
+          "analysis": "{{analyze}}",
+          "original": "{{trigger.source_content}}"
+        }
+      },
+      "outputs": {
+        "post": "string (max 3000 chars)",
+        "hashtags": "array"
+      }
+    },
+    {
+      "id": "generate_newsletter",
+      "name": "Generate Newsletter Section",
+      "action": "llm_call",
+      "inputs": {
+        "prompt_template": "newsletter-section-generator",
+        "variables": {
+          "analysis": "{{analyze}}",
+          "original": "{{trigger.source_content}}"
+        }
+      },
+      "outputs": {
+        "headline": "string",
+        "summary": "string (2-3 paragraphs)",
+        "key_takeaway": "string"
+      }
+    },
+    {
+      "id": "generate_shorts",
+      "name": "Generate Video Short Scripts",
+      "action": "llm_call",
+      "inputs": {
+        "prompt_template": "short-video-generator",
+        "variables": {
+          "key_points": "{{analyze.key_points}}",
+          "quotes": "{{analyze.quotes}}"
+        }
+      },
+      "outputs": {
+        "scripts": [
+          {
+            "hook": "string (first 3 seconds)",
+            "body": "string",
+            "cta": "string",
+            "duration_estimate": "30s | 60s"
+          }
+        ]
+      }
+    },
+    {
+      "id": "save_outputs",
+      "name": "Save to Content Bank",
+      "action": "parallel",
+      "tasks": [
+        {
+          "action": "save_to",
+          "destination": "notion | airtable | google_sheets",
+          "data": {
+            "source_url": "{{trigger.source_url}}",
+            "date_processed": "{{now}}",
+            "twitter_thread": "{{generate_twitter}}",
+            "linkedin_post": "{{generate_linkedin}}",
+            "newsletter": "{{generate_newsletter}}",
+            "video_scripts": "{{generate_shorts}}",
+            "status": "ready_for_review"
+          }
+        }
+      ]
+    },
+    {
+      "id": "schedule",
+      "name": "Schedule Publishing (Optional)",
+      "action": "conditional",
+      "conditions": [
+        {
+          "if": "{{config.auto_schedule}} == true",
+          "then": {
+            "action": "schedule_posts",
+            "platforms": {
+              "twitter": {
+                "content": "{{generate_twitter}}",
+                "schedule": "{{config.twitter_schedule}}"
+              },
+              "linkedin": {
+                "content": "{{generate_linkedin}}",
+                "schedule": "{{config.linkedin_schedule}}"
+              }
+            }
+          }
+        }
+      ]
+    }
+  ],
+  
+  "outputs": {
+    "content_bank_url": "{{save_outputs.destination_url}}",
+    "pieces_generated": 4,
+    "ready_for_review": [
+      "twitter_thread",
+      "linkedin_post", 
+      "newsletter_section",
+      "video_scripts"
+    ]
+  },
+  
+  "config": {
+    "llm_provider": "openai",
+    "llm_model": "gpt-4o",
+    "auto_schedule": false,
+    "review_required": true,
+    "brand_voice_doc": "path/to/brand-voice.md"
+  }
+}

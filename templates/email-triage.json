@@ -1,0 +1,128 @@
+{
+  "name": "AI Email Triage",
+  "description": "Automatically classify, prioritize, and route incoming emails",
+  "version": "1.0.0",
+  
+  "trigger": {
+    "type": "email_received",
+    "filters": {
+      "exclude_spam": true,
+      "exclude_newsletters": true
+    }
+  },
+  
+  "steps": [
+    {
+      "id": "extract",
+      "name": "Extract Email Data",
+      "action": "parse_email",
+      "inputs": {
+        "fields": ["sender", "subject", "body", "attachments", "timestamp"]
+      }
+    },
+    {
+      "id": "classify",
+      "name": "AI Classification",
+      "action": "llm_call",
+      "inputs": {
+        "prompt_template": "email-classifier",
+        "variables": {
+          "sender": "{{extract.sender}}",
+          "subject": "{{extract.subject}}",
+          "body": "{{extract.body}}"
+        }
+      },
+      "outputs": {
+        "category": "string",
+        "priority": "high|medium|low",
+        "sentiment": "positive|neutral|negative",
+        "requires_response": "boolean",
+        "suggested_action": "string"
+      }
+    },
+    {
+      "id": "route",
+      "name": "Route Based on Classification",
+      "action": "conditional",
+      "conditions": [
+        {
+          "if": "{{classify.priority}} == 'high' AND {{classify.requires_response}}",
+          "then": "urgent_queue"
+        },
+        {
+          "if": "{{classify.category}} == 'sales'",
+          "then": "sales_team"
+        },
+        {
+          "if": "{{classify.category}} == 'support'",
+          "then": "support_team"
+        },
+        {
+          "if": "{{classify.category}} == 'billing'",
+          "then": "finance_team"
+        }
+      ],
+      "default": "general_inbox"
+    },
+    {
+      "id": "label",
+      "name": "Apply Labels",
+      "action": "email_label",
+      "inputs": {
+        "labels": [
+          "{{classify.category}}",
+          "priority-{{classify.priority}}",
+          "{{classify.sentiment}}"
+        ]
+      }
+    },
+    {
+      "id": "notify",
+      "name": "Send Notification",
+      "action": "conditional",
+      "conditions": [
+        {
+          "if": "{{classify.priority}} == 'high'",
+          "then": {
+            "action": "send_notification",
+            "channel": "slack",
+            "message": "🚨 High priority email from {{extract.sender}}: {{extract.subject}}"
+          }
+        }
+      ]
+    },
+    {
+      "id": "draft_response",
+      "name": "Draft Response (Optional)",
+      "action": "conditional",
+      "conditions": [
+        {
+          "if": "{{classify.requires_response}} AND {{classify.category}} IN ['support', 'sales']",
+          "then": {
+            "action": "llm_call",
+            "prompt_template": "email-response-drafter",
+            "variables": {
+              "original_email": "{{extract.body}}",
+              "category": "{{classify.category}}",
+              "sentiment": "{{classify.sentiment}}"
+            },
+            "save_as": "draft"
+          }
+        }
+      ]
+    }
+  ],
+  
+  "outputs": {
+    "classification": "{{classify}}",
+    "routed_to": "{{route}}",
+    "draft_response": "{{draft_response.draft}}"
+  },
+  
+  "config": {
+    "llm_provider": "openai",
+    "llm_model": "gpt-4o-mini",
+    "max_retries": 3,
+    "timeout_seconds": 30
+  }
+}

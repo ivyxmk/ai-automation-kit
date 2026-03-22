@@ -1,0 +1,235 @@
+{
+  "name": "AI Data Extraction",
+  "description": "Extract structured data from web pages, PDFs, or unstructured text",
+  "version": "1.0.0",
+  
+  "trigger": {
+    "type": "manual|scheduled|webhook",
+    "config": {
+      "schedule": "0 9 * * *",
+      "webhook_path": "/extract"
+    }
+  },
+  
+  "inputs": {
+    "source_type": {
+      "type": "enum",
+      "values": ["url", "pdf", "text", "html"],
+      "required": true
+    },
+    "source": {
+      "type": "string",
+      "description": "URL, file path, or raw content to extract from",
+      "required": true
+    },
+    "schema": {
+      "type": "object",
+      "description": "Expected output schema with field definitions",
+      "required": true
+    },
+    "extraction_hints": {
+      "type": "string",
+      "description": "Additional context to guide extraction",
+      "required": false
+    }
+  },
+  
+  "steps": [
+    {
+      "id": "fetch",
+      "name": "Fetch Source Content",
+      "action": "conditional",
+      "conditions": [
+        {
+          "if": "{{inputs.source_type}} == 'url'",
+          "then": {
+            "action": "http_fetch",
+            "url": "{{inputs.source}}",
+            "extract_mode": "markdown"
+          }
+        },
+        {
+          "if": "{{inputs.source_type}} == 'pdf'",
+          "then": {
+            "action": "pdf_parse",
+            "file_path": "{{inputs.source}}"
+          }
+        },
+        {
+          "if": "{{inputs.source_type}} == 'html'",
+          "then": {
+            "action": "html_to_text",
+            "content": "{{inputs.source}}"
+          }
+        }
+      ],
+      "default": {
+        "action": "passthrough",
+        "content": "{{inputs.source}}"
+      }
+    },
+    {
+      "id": "chunk",
+      "name": "Chunk Large Content",
+      "action": "conditional",
+      "conditions": [
+        {
+          "if": "length({{fetch.content}}) > 8000",
+          "then": {
+            "action": "text_chunker",
+            "content": "{{fetch.content}}",
+            "chunk_size": 4000,
+            "overlap": 200
+          }
+        }
+      ],
+      "default": {
+        "chunks": ["{{fetch.content}}"]
+      }
+    },
+    {
+      "id": "extract",
+      "name": "AI Extraction",
+      "action": "llm_call",
+      "loop": "{{chunk.chunks}}",
+      "inputs": {
+        "system_prompt": "You are a precise data extraction assistant. Extract ONLY the requested fields from the provided content. Return valid JSON matching the exact schema. If a field cannot be found, use null. Never invent data.",
+        "prompt": "Extract the following structured data from this content:\n\nSCHEMA:\n{{json(inputs.schema)}}\n\n{{#if inputs.extraction_hints}}HINTS: {{inputs.extraction_hints}}{{/if}}\n\nCONTENT:\n{{item}}\n\nReturn ONLY valid JSON matching the schema. No explanations.",
+        "response_format": "json_object"
+      },
+      "outputs": {
+        "extracted": "object"
+      }
+    },
+    {
+      "id": "merge",
+      "name": "Merge Chunked Results",
+      "action": "conditional",
+      "conditions": [
+        {
+          "if": "length({{extract.results}}) > 1",
+          "then": {
+            "action": "llm_call",
+            "inputs": {
+              "system_prompt": "Merge these partial extractions into a single coherent result. Deduplicate and resolve conflicts by preferring more complete data.",
+              "prompt": "Merge these extractions into the schema {{json(inputs.schema)}}:\n\n{{json(extract.results)}}",
+              "response_format": "json_object"
+            }
+          }
+        }
+      ],
+      "default": "{{extract.results[0]}}"
+    },
+    {
+      "id": "validate",
+      "name": "Validate Extracted Data",
+      "action": "schema_validate",
+      "inputs": {
+        "data": "{{merge.result}}",
+        "schema": "{{inputs.schema}}",
+        "strict": false
+      },
+      "outputs": {
+        "valid": "boolean",
+        "errors": "array"
+      }
+    },
+    {
+      "id": "enrich",
+      "name": "Optional Enrichment",
+      "action": "conditional",
+      "conditions": [
+        {
+          "if": "{{validate.valid}} AND {{config.enable_enrichment}}",
+          "then": {
+            "action": "parallel",
+            "tasks": [
+              {
+                "if": "{{merge.result.email}}",
+                "action": "email_verify",
+                "email": "{{merge.result.email}}"
+              },
+              {
+                "if": "{{merge.result.company}}",
+                "action": "company_lookup",
+                "name": "{{merge.result.company}}"
+              }
+            ]
+          }
+        }
+      ]
+    }
+  ],
+  
+  "outputs": {
+    "data": "{{merge.result}}",
+    "validation": {
+      "valid": "{{validate.valid}}",
+      "errors": "{{validate.errors}}"
+    },
+    "metadata": {
+      "source": "{{inputs.source}}",
+      "source_type": "{{inputs.source_type}}",
+      "extracted_at": "{{now()}}",
+      "content_length": "{{length(fetch.content)}}"
+    }
+  },
+  
+  "config": {
+    "llm_provider": "openai",
+    "llm_model": "gpt-4o-mini",
+    "enable_enrichment": false,
+    "max_retries": 2,
+    "timeout_seconds": 60
+  },
+  
+  "examples": [
+    {
+      "name": "Extract Contact from Website",
+      "inputs": {
+        "source_type": "url",
+        "source": "https://example.com/about",
+        "schema": {
+          "company_name": "string",
+          "email": "string",
+          "phone": "string",
+          "address": "string",
+          "social_links": "array"
+        }
+      }
+    },
+    {
+      "name": "Extract Invoice Data",
+      "inputs": {
+        "source_type": "pdf",
+        "source": "./invoices/invoice-2024-001.pdf",
+        "schema": {
+          "invoice_number": "string",
+          "date": "string",
+          "vendor": "string",
+          "line_items": [{"description": "string", "quantity": "number", "price": "number"}],
+          "total": "number",
+          "due_date": "string"
+        },
+        "extraction_hints": "Currency is USD. Dates are in MM/DD/YYYY format."
+      }
+    },
+    {
+      "name": "Extract Product Info",
+      "inputs": {
+        "source_type": "url",
+        "source": "https://shop.example.com/product/123",
+        "schema": {
+          "name": "string",
+          "price": "number",
+          "currency": "string",
+          "description": "string",
+          "specs": "object",
+          "in_stock": "boolean",
+          "reviews_count": "number",
+          "rating": "number"
+        }
+      }
+    }
+  ]
+}
