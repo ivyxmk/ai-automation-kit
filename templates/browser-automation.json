@@ -1,0 +1,157 @@
+{
+  "name": "AI Browser Automation",
+  "description": "Intelligent web scraping and browser automation with AI-powered decision making",
+  "version": "1.0.0",
+  "trending": "2026-03 - Browser automation infrastructure emerging as hot category",
+  
+  "trigger": {
+    "type": "scheduled | webhook | manual",
+    "config": {
+      "schedule": "0 9 * * *",
+      "timezone": "UTC"
+    }
+  },
+  
+  "steps": [
+    {
+      "id": "init_browser",
+      "name": "Initialize Browser",
+      "action": "browser_launch",
+      "inputs": {
+        "headless": true,
+        "browser": "chromium",
+        "viewport": {"width": 1920, "height": 1080},
+        "user_agent": "Mozilla/5.0 (compatible; AutomationBot/1.0)"
+      }
+    },
+    {
+      "id": "navigate",
+      "name": "Navigate to Target",
+      "action": "browser_goto",
+      "inputs": {
+        "url": "{{config.target_url}}",
+        "wait_until": "networkidle",
+        "timeout": 30000
+      }
+    },
+    {
+      "id": "analyze_page",
+      "name": "AI Page Analysis",
+      "action": "llm_call",
+      "inputs": {
+        "prompt_template": "browser-analyzer",
+        "variables": {
+          "page_html": "{{navigate.html}}",
+          "page_text": "{{navigate.text}}",
+          "task": "{{config.extraction_task}}"
+        }
+      },
+      "outputs": {
+        "elements_to_extract": "array",
+        "navigation_needed": "boolean",
+        "next_actions": "array"
+      }
+    },
+    {
+      "id": "extract_data",
+      "name": "Extract Data",
+      "action": "browser_extract",
+      "inputs": {
+        "selectors": "{{analyze_page.elements_to_extract}}",
+        "format": "json"
+      }
+    },
+    {
+      "id": "process_data",
+      "name": "AI Data Processing",
+      "action": "llm_call",
+      "inputs": {
+        "prompt_template": "data-processor",
+        "variables": {
+          "raw_data": "{{extract_data.results}}",
+          "schema": "{{config.output_schema}}"
+        }
+      },
+      "outputs": {
+        "processed_data": "object",
+        "quality_score": "number",
+        "issues": "array"
+      }
+    },
+    {
+      "id": "handle_pagination",
+      "name": "Handle Pagination",
+      "action": "conditional_loop",
+      "conditions": [
+        {
+          "if": "{{analyze_page.navigation_needed}} AND {{loop.count}} < {{config.max_pages}}",
+          "then": {
+            "action": "browser_click",
+            "selector": "{{analyze_page.next_page_selector}}",
+            "goto_step": "analyze_page"
+          }
+        }
+      ]
+    },
+    {
+      "id": "save_results",
+      "name": "Save Results",
+      "action": "parallel",
+      "tasks": [
+        {
+          "action": "save_to_db",
+          "data": "{{process_data.processed_data}}",
+          "destination": "{{config.database}}"
+        },
+        {
+          "action": "save_to_file",
+          "data": "{{process_data.processed_data}}",
+          "path": "{{config.output_path}}",
+          "format": "json"
+        }
+      ]
+    },
+    {
+      "id": "cleanup",
+      "name": "Cleanup",
+      "action": "browser_close"
+    }
+  ],
+  
+  "outputs": {
+    "data": "{{process_data.processed_data}}",
+    "pages_scraped": "{{loop.count}}",
+    "quality_score": "{{process_data.quality_score}}",
+    "execution_time": "{{runtime.duration}}"
+  },
+  
+  "config": {
+    "target_url": "https://example.com",
+    "extraction_task": "Extract product listings with name, price, and description",
+    "output_schema": {
+      "type": "array",
+      "items": {
+        "name": "string",
+        "price": "number",
+        "description": "string",
+        "url": "string"
+      }
+    },
+    "max_pages": 10,
+    "rate_limit_ms": 2000,
+    "retry_attempts": 3
+  },
+  
+  "error_handling": {
+    "on_captcha": "pause_and_notify",
+    "on_block": "rotate_proxy",
+    "on_timeout": "retry_with_backoff",
+    "on_missing_element": "skip_and_log"
+  },
+  
+  "compliance": {
+    "respect_robots_txt": true,
+    "rate_limiting": true,
+    "user_agent_disclosure": true
+  }
+}
