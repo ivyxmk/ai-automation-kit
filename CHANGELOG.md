@@ -2,6 +2,22 @@
 
 All notable changes to the AI Automation Starter Kit.
 
+## [1.0.5] - 2026-03-23
+
+### Added
+
+**Templates:**
+- `multi-agent-orchestrator.json` - Coordinate multiple specialized AI agents (planner, researcher, analyst, writer, reviewer, synthesizer) for complex tasks. Features DAG-based execution, shared memory, quality review loops, and automatic iteration. Inspired by trending frameworks: obra/superpowers (+38K stars), GitHub Squad, LangGraph.
+
+**Prompts:**
+- `multi-agent-planner.md` - Strategic task decomposition prompt for multi-agent workflows with examples and anti-patterns
+
+### Notes
+
+Multi-agent orchestration is the hottest trend in AI automation (March 2026). This template provides a production-ready pattern for coordinating specialized agents.
+
+---
+
 ## [1.0.4] - 2026-03-19
 
 ### Added

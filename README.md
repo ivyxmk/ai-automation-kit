@@ -14,8 +14,9 @@ Ready-to-use workflow templates for common automation patterns:
 - Document extraction & summarization
 - Lead qualification & routing
 - Content repurposing pipeline
-- Customer support triage
-- Data enrichment flows
+- Meeting summarization
+- Browser automation & scraping
+- **Multi-agent orchestration** ⭐ *NEW - coordinate specialized AI agents*
 
 ### 📁 `/prompts`
 Battle-tested GPT prompts optimized for automation:
@@ -57,9 +58,11 @@ Implementation guides:
 | Problem | Solution | Template |
 |---------|----------|----------|
 | Manual email sorting | AI-powered inbox triage | `email-triage.json` |
-| Repetitive data entry | Document extraction pipeline | `doc-extract.json` |
-| Slow lead response | Instant qualification bot | `lead-qual.json` |
+| Repetitive data entry | Document extraction pipeline | `data-extraction.json` |
+| Slow lead response | Instant qualification bot | `lead-qualification.json` |
 | Content bottleneck | Repurposing automation | `content-repurpose.json` |
+| Complex multi-step tasks | Multi-agent orchestration | `multi-agent-orchestrator.json` |
+| Web data collection | Browser automation | `browser-automation.json` |
 
 ---
 

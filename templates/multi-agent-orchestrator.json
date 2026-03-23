@@ -1,0 +1,284 @@
+{
+  "name": "Multi-Agent Orchestrator",
+  "description": "Coordinate multiple specialized AI agents for complex tasks with routing, memory, and synthesis",
+  "version": "1.0.0",
+  "trending": "2026-03 - Agent harness frameworks exploding (superpowers +38K stars, GitHub Squad, LangGraph)",
+  
+  "trigger": {
+    "type": "webhook | manual | scheduled",
+    "config": {
+      "webhook_path": "/orchestrate",
+      "timeout_seconds": 300
+    }
+  },
+  
+  "inputs": {
+    "task": {
+      "type": "string",
+      "description": "High-level task to accomplish",
+      "required": true
+    },
+    "context": {
+      "type": "object",
+      "description": "Additional context, files, or data",
+      "required": false
+    },
+    "max_iterations": {
+      "type": "number",
+      "default": 5,
+      "description": "Maximum planning/execution cycles"
+    }
+  },
+  
+  "agents": {
+    "planner": {
+      "role": "Strategic Planner",
+      "system_prompt": "You are a strategic planning agent. Break complex tasks into subtasks, identify which specialist agents are needed, and create an execution plan. Output JSON with 'subtasks' array, each containing 'id', 'description', 'assigned_agent', 'dependencies' (list of subtask ids), and 'priority'.",
+      "model": "{{config.planner_model}}",
+      "temperature": 0.3
+    },
+    "researcher": {
+      "role": "Research Specialist",
+      "system_prompt": "You are a research agent. Gather information, search for data, and compile findings. Be thorough but concise. Always cite sources when available. Output structured findings with 'summary', 'key_points' array, 'sources' array, and 'confidence' score (0-1).",
+      "model": "{{config.worker_model}}",
+      "tools": ["web_search", "web_fetch", "file_read"],
+      "temperature": 0.2
+    },
+    "analyst": {
+      "role": "Analysis Specialist", 
+      "system_prompt": "You are an analytical agent. Process data, identify patterns, draw insights, and make recommendations. Be precise and data-driven. Output structured analysis with 'findings' array, 'patterns' array, 'risks' array, and 'recommendations' array.",
+      "model": "{{config.worker_model}}",
+      "tools": ["code_execute", "data_query"],
+      "temperature": 0.1
+    },
+    "writer": {
+      "role": "Content Specialist",
+      "system_prompt": "You are a writing agent. Create clear, engaging content based on research and analysis. Adapt tone and format to the target audience. Output with 'content', 'format', 'word_count', and 'readability_score'.",
+      "model": "{{config.worker_model}}",
+      "temperature": 0.7
+    },
+    "reviewer": {
+      "role": "Quality Reviewer",
+      "system_prompt": "You are a critical review agent. Check work for accuracy, completeness, and quality. Identify issues and suggest improvements. Output with 'approved' boolean, 'score' (0-100), 'issues' array, and 'suggestions' array.",
+      "model": "{{config.reviewer_model}}",
+      "temperature": 0.1
+    },
+    "synthesizer": {
+      "role": "Final Synthesizer",
+      "system_prompt": "You are a synthesis agent. Combine outputs from multiple agents into a coherent final deliverable. Resolve conflicts, eliminate redundancy, and ensure consistency. Create the best possible unified output.",
+      "model": "{{config.planner_model}}",
+      "temperature": 0.4
+    }
+  },
+  
+  "memory": {
+    "type": "shared",
+    "store": "in_memory",
+    "config": {
+      "max_items": 100,
+      "ttl_seconds": 3600
+    },
+    "schema": {
+      "task_context": "object",
+      "agent_outputs": "object",
+      "decisions": "array",
+      "artifacts": "array"
+    }
+  },
+  
+  "steps": [
+    {
+      "id": "init",
+      "name": "Initialize Orchestration",
+      "action": "memory_init",
+      "inputs": {
+        "task_context": {
+          "original_task": "{{inputs.task}}",
+          "context": "{{inputs.context}}",
+          "started_at": "{{now()}}"
+        },
+        "agent_outputs": {},
+        "decisions": [],
+        "artifacts": []
+      }
+    },
+    {
+      "id": "plan",
+      "name": "Create Execution Plan",
+      "action": "agent_call",
+      "agent": "planner",
+      "inputs": {
+        "prompt": "Create an execution plan for this task:\n\nTASK: {{inputs.task}}\n\n{{#if inputs.context}}CONTEXT: {{json(inputs.context)}}{{/if}}\n\nAVAILABLE AGENTS:\n- researcher: Web search, data gathering\n- analyst: Data analysis, pattern detection\n- writer: Content creation, formatting\n- reviewer: Quality assurance\n\nCreate a plan with 2-6 subtasks. Consider dependencies and parallelization opportunities."
+      },
+      "outputs": {
+        "plan": "object"
+      }
+    },
+    {
+      "id": "validate_plan",
+      "name": "Validate Plan",
+      "action": "schema_validate",
+      "inputs": {
+        "data": "{{plan.plan}}",
+        "schema": {
+          "subtasks": {
+            "type": "array",
+            "items": {
+              "id": "string",
+              "description": "string",
+              "assigned_agent": "enum:researcher,analyst,writer,reviewer",
+              "dependencies": "array",
+              "priority": "number"
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "execute_subtasks",
+      "name": "Execute Subtasks",
+      "action": "dag_execute",
+      "inputs": {
+        "tasks": "{{plan.plan.subtasks}}",
+        "dependency_key": "dependencies",
+        "max_parallel": 3
+      },
+      "for_each_task": {
+        "action": "agent_call",
+        "agent": "{{task.assigned_agent}}",
+        "inputs": {
+          "prompt": "{{task.description}}\n\nCONTEXT FROM PREVIOUS STEPS:\n{{json(memory.agent_outputs)}}\n\nORIGINAL TASK: {{inputs.task}}"
+        },
+        "on_complete": {
+          "action": "memory_update",
+          "path": "agent_outputs.{{task.id}}",
+          "value": "{{result}}"
+        }
+      }
+    },
+    {
+      "id": "review",
+      "name": "Quality Review",
+      "action": "agent_call",
+      "agent": "reviewer",
+      "inputs": {
+        "prompt": "Review all agent outputs for quality and completeness:\n\nORIGINAL TASK: {{inputs.task}}\n\nAGENT OUTPUTS:\n{{json(memory.agent_outputs)}}\n\nCheck for:\n1. Task completion - Does the work fulfill the original request?\n2. Accuracy - Are facts and data correct?\n3. Consistency - Do outputs align with each other?\n4. Quality - Is the work production-ready?"
+      },
+      "outputs": {
+        "review": "object"
+      }
+    },
+    {
+      "id": "iterate_or_continue",
+      "name": "Decide: Iterate or Finalize",
+      "action": "conditional",
+      "conditions": [
+        {
+          "if": "{{review.review.approved}} == false AND {{loop.iteration}} < {{inputs.max_iterations}}",
+          "then": {
+            "action": "agent_call",
+            "agent": "planner",
+            "inputs": {
+              "prompt": "The reviewer found issues. Create a remediation plan:\n\nISSUES: {{json(review.review.issues)}}\nSUGGESTIONS: {{json(review.review.suggestions)}}\n\nCreate subtasks to address these issues."
+            },
+            "goto_step": "execute_subtasks"
+          }
+        }
+      ],
+      "default": {
+        "continue": true
+      }
+    },
+    {
+      "id": "synthesize",
+      "name": "Final Synthesis",
+      "action": "agent_call",
+      "agent": "synthesizer",
+      "inputs": {
+        "prompt": "Synthesize all agent outputs into the final deliverable:\n\nORIGINAL TASK: {{inputs.task}}\n\nALL OUTPUTS:\n{{json(memory.agent_outputs)}}\n\nREVIEWER FEEDBACK:\n{{json(review.review)}}\n\nCreate a unified, polished final output. Format appropriately for the task type."
+      },
+      "outputs": {
+        "final": "object"
+      }
+    },
+    {
+      "id": "log_execution",
+      "name": "Log Execution Trace",
+      "action": "memory_update",
+      "inputs": {
+        "path": "execution_trace",
+        "value": {
+          "plan": "{{plan.plan}}",
+          "iterations": "{{loop.iteration}}",
+          "review_score": "{{review.review.score}}",
+          "completed_at": "{{now()}}"
+        }
+      }
+    }
+  ],
+  
+  "outputs": {
+    "result": "{{synthesize.final}}",
+    "metadata": {
+      "task": "{{inputs.task}}",
+      "agents_used": "{{unique(map(plan.plan.subtasks, 'assigned_agent'))}}",
+      "iterations": "{{loop.iteration}}",
+      "quality_score": "{{review.review.score}}",
+      "execution_time_ms": "{{runtime.duration}}"
+    },
+    "trace": "{{memory.execution_trace}}"
+  },
+  
+  "config": {
+    "planner_model": "gpt-4o",
+    "worker_model": "gpt-4o-mini",
+    "reviewer_model": "gpt-4o",
+    "max_parallel_agents": 3,
+    "agent_timeout_seconds": 60,
+    "enable_tool_use": true
+  },
+  
+  "error_handling": {
+    "on_agent_failure": "retry_with_different_model",
+    "on_timeout": "partial_result_with_warning",
+    "on_review_fail_max_iterations": "return_best_effort",
+    "fallback_model": "claude-3-haiku"
+  },
+  
+  "examples": [
+    {
+      "name": "Market Research Report",
+      "inputs": {
+        "task": "Research the AI automation market and create an executive summary with key trends, major players, and 2026 predictions",
+        "context": {
+          "audience": "C-level executives",
+          "format": "2-page executive brief"
+        },
+        "max_iterations": 3
+      },
+      "expected_agents": ["researcher", "analyst", "writer", "reviewer"]
+    },
+    {
+      "name": "Code Review & Documentation",
+      "inputs": {
+        "task": "Review this codebase for security issues, suggest improvements, and generate API documentation",
+        "context": {
+          "repo_url": "https://github.com/example/project",
+          "focus": ["security", "performance", "documentation"]
+        }
+      },
+      "expected_agents": ["researcher", "analyst", "writer", "reviewer"]
+    },
+    {
+      "name": "Competitive Analysis",
+      "inputs": {
+        "task": "Analyze our top 3 competitors, compare features, pricing, and market positioning. Create a strategic recommendation.",
+        "context": {
+          "our_product": "AI workflow automation platform",
+          "competitors": ["Zapier", "Make", "n8n"]
+        }
+      },
+      "expected_agents": ["researcher", "analyst", "writer", "reviewer"]
+    }
+  ]
+}
