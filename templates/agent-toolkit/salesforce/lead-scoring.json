@@ -1,0 +1,131 @@
+{
+  "$schema": "../_base/agent-toolkit-schema.json",
+  "metadata": {
+    "name": "salesforce-lead-scoring",
+    "version": "0.1.0",
+    "description": "Automated lead scoring and follow-up using Salesforce Agentforce",
+    "author": "Vector",
+    "created": "2026-03-24",
+    "status": "scaffold",
+    "partner": "Salesforce",
+    "toolkit_version": "1.0"
+  },
+  "agent": {
+    "name": "Lead Scoring Agent",
+    "model": "nemotron",
+    "description": "Scores leads and triggers automated follow-up workflows"
+  },
+  "workflow": {
+    "trigger": {
+      "type": "salesforce_event",
+      "event": "Lead.Created",
+      "conditions": ["Status == 'New'"]
+    },
+    "steps": [
+      {
+        "id": "enrich_lead",
+        "type": "tool_call",
+        "tool": "salesforce_lead_enrich",
+        "description": "Fetch additional data from external sources"
+      },
+      {
+        "id": "calculate_score",
+        "type": "ai_inference",
+        "model": "nemotron",
+        "prompt": "Score this lead 1-100 based on: {{lead_data}}",
+        "output": "lead_score"
+      },
+      {
+        "id": "route_lead",
+        "type": "conditional",
+        "conditions": [
+          {
+            "if": "lead_score >= 80",
+            "then": "assign_to_sales"
+          },
+          {
+            "if": "lead_score >= 50",
+            "then": "nurture_campaign"
+          },
+          {
+            "else": "low_priority_queue"
+          }
+        ]
+      },
+      {
+        "id": "assign_to_sales",
+        "type": "tool_call",
+        "tool": "salesforce_assign_owner",
+        "params": {
+          "assignment_rule": "round_robin",
+          "team": "{{sales_team}}"
+        }
+      },
+      {
+        "id": "nurture_campaign",
+        "type": "tool_call",
+        "tool": "salesforce_add_to_campaign",
+        "params": {
+          "campaign_id": "{{nurture_campaign_id}}"
+        }
+      },
+      {
+        "id": "slack_notify",
+        "type": "tool_call",
+        "tool": "slack_send_message",
+        "condition": "lead_score >= 80",
+        "params": {
+          "channel": "{{sales_channel}}",
+          "message": "🔥 Hot lead: {{lead_name}} (Score: {{lead_score}})"
+        }
+      }
+    ]
+  },
+  "tools": [
+    {
+      "name": "salesforce_lead_enrich",
+      "description": "Enrich lead with external data",
+      "endpoint": "TODO: Salesforce Data Cloud API"
+    },
+    {
+      "name": "salesforce_assign_owner",
+      "description": "Assign lead to sales rep",
+      "endpoint": "TODO: Salesforce Assignment API"
+    },
+    {
+      "name": "salesforce_add_to_campaign",
+      "description": "Add lead to nurture campaign",
+      "endpoint": "TODO: Salesforce Campaign API"
+    },
+    {
+      "name": "slack_send_message",
+      "description": "Send Slack notification via Agentforce",
+      "endpoint": "TODO: Slack integration"
+    }
+  ],
+  "variables": {
+    "sales_team": {
+      "type": "string",
+      "required": true,
+      "description": "Target sales team for high-score leads"
+    },
+    "nurture_campaign_id": {
+      "type": "string",
+      "required": true,
+      "description": "Campaign ID for medium-score leads"
+    },
+    "sales_channel": {
+      "type": "string",
+      "default": "#sales-alerts",
+      "description": "Slack channel for notifications"
+    }
+  },
+  "_notes": {
+    "TODO": [
+      "Integrate with Salesforce Agentforce SDK",
+      "Add scoring model training data",
+      "Implement A/B testing for routing rules",
+      "Add Slack Enterprise Grid support"
+    ]
+  }
+}

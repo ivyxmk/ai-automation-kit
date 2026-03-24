@@ -2,6 +2,26 @@
 
 All notable changes to the AI Automation Starter Kit.
 
+## [1.0.6] - 2026-03-24
+
+### Added
+
+**Templates:**
+- `autonomous-research-agent.json` - Self-evolving research agent that produces comprehensive reports with sources, analysis, and insights. Features multi-phase workflow (discovery → extraction → synthesis → critique → writing), self-critique loop for gap identification, confidence scoring, and cost optimization. Inspired by trending AutoResearchClaw (4.1K stars) and autonomous research workflows.
+
+**Key Features:**
+- 3 depth modes: quick ($0.05-0.15), standard ($0.15-0.50), deep ($0.50-2.00)
+- 4 output formats: executive_brief, full_report, markdown_doc, structured_data
+- Automatic source ranking by credibility and recency
+- Iterative gap-filling with self-critique
+- Inline citations and confidence scoring
+
+### Notes
+
+Trending: Xiaomi MiMo-V2-Pro (1T params) now free on OpenRouter, obra/superpowers #1 on GitHub (92K stars), GitHub Squad embedding agents in repos. Autonomous research workflows are in high demand.
+
+---
+
 ## [1.0.5] - 2026-03-23
 
 ### Added

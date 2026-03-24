@@ -1,0 +1,340 @@
+{
+  "name": "Autonomous Research Agent",
+  "description": "Self-evolving research agent that takes a topic and produces comprehensive research reports with sources, analysis, and actionable insights",
+  "version": "1.0.0",
+  "trending": "2026-03 - AutoResearchClaw hit 4.1K stars, autonomous research workflows in demand",
+  
+  "trigger": {
+    "type": "webhook | manual | scheduled",
+    "config": {
+      "webhook_path": "/research",
+      "timeout_seconds": 600
+    }
+  },
+  
+  "inputs": {
+    "topic": {
+      "type": "string",
+      "description": "Research topic or question to investigate",
+      "required": true
+    },
+    "depth": {
+      "type": "enum",
+      "options": ["quick", "standard", "deep"],
+      "default": "standard",
+      "description": "Research depth - affects number of sources and iterations"
+    },
+    "output_format": {
+      "type": "enum",
+      "options": ["executive_brief", "full_report", "markdown_doc", "structured_data"],
+      "default": "full_report"
+    },
+    "focus_areas": {
+      "type": "array",
+      "description": "Specific aspects to focus on",
+      "required": false
+    },
+    "max_sources": {
+      "type": "number",
+      "default": 10,
+      "description": "Maximum number of sources to analyze"
+    }
+  },
+  
+  "phases": {
+    "discovery": {
+      "name": "Source Discovery",
+      "description": "Find and rank relevant sources",
+      "model": "{{config.fast_model}}",
+      "temperature": 0.2
+    },
+    "extraction": {
+      "name": "Information Extraction",
+      "description": "Extract key facts, quotes, and data from sources",
+      "model": "{{config.worker_model}}",
+      "temperature": 0.1
+    },
+    "synthesis": {
+      "name": "Knowledge Synthesis",
+      "description": "Combine findings into coherent insights",
+      "model": "{{config.reasoning_model}}",
+      "temperature": 0.3
+    },
+    "critique": {
+      "name": "Self-Critique",
+      "description": "Identify gaps, biases, and areas needing more research",
+      "model": "{{config.reasoning_model}}",
+      "temperature": 0.2
+    },
+    "writing": {
+      "name": "Report Generation",
+      "description": "Produce final formatted output",
+      "model": "{{config.worker_model}}",
+      "temperature": 0.5
+    }
+  },
+  
+  "memory": {
+    "type": "persistent",
+    "store": "file",
+    "config": {
+      "base_path": "./research_sessions",
+      "format": "json"
+    },
+    "schema": {
+      "sources": "array",
+      "extracted_facts": "array",
+      "insights": "array",
+      "gaps_identified": "array",
+      "iterations": "number",
+      "confidence_score": "number"
+    }
+  },
+  
+  "steps": [
+    {
+      "id": "init",
+      "name": "Initialize Research Session",
+      "action": "memory_init",
+      "inputs": {
+        "topic": "{{inputs.topic}}",
+        "started_at": "{{now()}}",
+        "sources": [],
+        "extracted_facts": [],
+        "insights": [],
+        "gaps_identified": [],
+        "iterations": 0,
+        "confidence_score": 0
+      }
+    },
+    {
+      "id": "generate_queries",
+      "name": "Generate Search Queries",
+      "action": "llm_call",
+      "phase": "discovery",
+      "inputs": {
+        "prompt": "You are a research strategist. Generate 5-8 diverse search queries to thoroughly research this topic:\n\nTOPIC: {{inputs.topic}}\n\n{{#if inputs.focus_areas}}FOCUS AREAS: {{json(inputs.focus_areas)}}{{/if}}\n\nGenerate queries that cover:\n1. Core definitions and concepts\n2. Recent developments (2025-2026)\n3. Key players and stakeholders\n4. Data, statistics, and metrics\n5. Expert opinions and analysis\n6. Contrarian or critical perspectives\n\nOutput JSON: {\"queries\": [\"query1\", \"query2\", ...]}"
+      },
+      "outputs": {
+        "queries": "array"
+      }
+    },
+    {
+      "id": "execute_searches",
+      "name": "Execute Web Searches",
+      "action": "parallel_tool_calls",
+      "tool": "web_search",
+      "inputs": {
+        "queries": "{{generate_queries.queries}}",
+        "count_per_query": 5
+      },
+      "outputs": {
+        "raw_results": "array"
+      }
+    },
+    {
+      "id": "rank_sources",
+      "name": "Rank and Deduplicate Sources",
+      "action": "llm_call",
+      "phase": "discovery",
+      "inputs": {
+        "prompt": "Rank these search results by relevance and credibility for the research topic.\n\nTOPIC: {{inputs.topic}}\nRESULTS: {{json(execute_searches.raw_results)}}\n\nScore each source 1-10 on:\n- Relevance to topic\n- Source credibility (prefer: academic, government, reputable news, industry reports)\n- Recency (prefer 2024-2026)\n- Information density\n\nOutput JSON: {\"ranked_sources\": [{\"url\": \"...\", \"title\": \"...\", \"score\": N, \"rationale\": \"...\"}], \"total_unique\": N}\n\nLimit to top {{inputs.max_sources}} sources."
+      },
+      "outputs": {
+        "ranked_sources": "array"
+      }
+    },
+    {
+      "id": "fetch_content",
+      "name": "Fetch Full Content",
+      "action": "parallel_tool_calls",
+      "tool": "web_fetch",
+      "inputs": {
+        "urls": "{{map(rank_sources.ranked_sources, 'url')}}",
+        "max_chars_per_source": 15000
+      },
+      "outputs": {
+        "fetched_content": "array"
+      }
+    },
+    {
+      "id": "extract_information",
+      "name": "Extract Key Information",
+      "action": "map_reduce",
+      "phase": "extraction",
+      "map": {
+        "input": "{{fetched_content}}",
+        "prompt": "Extract key information from this source for research on: {{inputs.topic}}\n\nSOURCE: {{item.url}}\nCONTENT:\n{{item.content}}\n\nExtract:\n1. Key facts and claims (with direct quotes where valuable)\n2. Statistics, numbers, data points\n3. Named entities (people, companies, products)\n4. Dates and timeline information\n5. Opinions and predictions\n\nOutput JSON: {\"facts\": [{\"claim\": \"...\", \"quote\": \"...\", \"confidence\": 0.0-1.0}], \"statistics\": [], \"entities\": [], \"dates\": [], \"opinions\": []}"
+      },
+      "reduce": {
+        "prompt": "Combine all extracted information, deduplicating and noting where multiple sources confirm the same facts.\n\nOutput JSON with combined arrays and source_count for each fact."
+      },
+      "outputs": {
+        "extracted": "object"
+      }
+    },
+    {
+      "id": "save_extraction",
+      "name": "Save Extracted Facts",
+      "action": "memory_update",
+      "inputs": {
+        "path": "extracted_facts",
+        "value": "{{extract_information.extracted}}"
+      }
+    },
+    {
+      "id": "synthesize",
+      "name": "Synthesize Insights",
+      "action": "llm_call",
+      "phase": "synthesis",
+      "inputs": {
+        "prompt": "You are a senior research analyst. Synthesize these extracted facts into coherent insights.\n\nTOPIC: {{inputs.topic}}\nEXTRACTED DATA:\n{{json(memory.extracted_facts)}}\n\nProduce:\n1. EXECUTIVE SUMMARY (3-5 sentences capturing the most important findings)\n2. KEY INSIGHTS (5-10 major takeaways, each with supporting evidence)\n3. TRENDS & PATTERNS (what direction is this topic heading)\n4. CONFLICTING INFORMATION (where sources disagree and your assessment)\n5. CONFIDENCE ASSESSMENT (how reliable is this research, what's uncertain)\n\nOutput structured JSON."
+      },
+      "outputs": {
+        "synthesis": "object"
+      }
+    },
+    {
+      "id": "self_critique",
+      "name": "Self-Critique & Gap Analysis",
+      "action": "llm_call",
+      "phase": "critique",
+      "inputs": {
+        "prompt": "You are a critical reviewer. Analyze this research for gaps and weaknesses.\n\nTOPIC: {{inputs.topic}}\nCURRENT SYNTHESIS:\n{{json(synthesize.synthesis)}}\nSOURCES USED: {{length(rank_sources.ranked_sources)}}\n\nIdentify:\n1. GAPS: What important aspects of the topic weren't covered?\n2. BIAS: Are there perspectives missing? Is coverage balanced?\n3. RECENCY: Is any information potentially outdated?\n4. DEPTH: Which areas need more investigation?\n5. QUESTIONS: What follow-up questions remain unanswered?\n\nOutput JSON: {\"gaps\": [], \"bias_concerns\": [], \"needs_update\": [], \"shallow_areas\": [], \"open_questions\": [], \"overall_completeness\": 0.0-1.0, \"recommendation\": \"iterate|sufficient\"}"
+      },
+      "outputs": {
+        "critique": "object"
+      }
+    },
+    {
+      "id": "iterate_decision",
+      "name": "Decide: Iterate or Finalize",
+      "action": "conditional",
+      "conditions": [
+        {
+          "if": "{{critique.critique.recommendation}} == 'iterate' AND {{memory.iterations}} < {{config.max_iterations}} AND {{inputs.depth}} != 'quick'",
+          "then": {
+            "action": "llm_call",
+            "prompt": "Generate 3-5 additional search queries to address these research gaps:\n\nGAPS: {{json(critique.critique.gaps)}}\nSHALLOW AREAS: {{json(critique.critique.shallow_areas)}}\nOPEN QUESTIONS: {{json(critique.critique.open_questions)}}\n\nOutput JSON: {\"follow_up_queries\": []}",
+            "then_actions": [
+              {
+                "action": "memory_update",
+                "path": "iterations",
+                "value": "{{memory.iterations + 1}}"
+              },
+              {
+                "action": "memory_update",
+                "path": "gaps_identified",
+                "value": "{{append(memory.gaps_identified, critique.critique.gaps)}}"
+              }
+            ],
+            "goto_step": "execute_searches"
+          }
+        }
+      ],
+      "default": {
+        "continue": true
+      }
+    },
+    {
+      "id": "generate_report",
+      "name": "Generate Final Report",
+      "action": "llm_call",
+      "phase": "writing",
+      "inputs": {
+        "prompt": "Generate a comprehensive research report.\n\nTOPIC: {{inputs.topic}}\nFORMAT: {{inputs.output_format}}\nSYNTHESIS: {{json(synthesize.synthesis)}}\nCRITIQUE: {{json(critique.critique)}}\nSOURCES: {{json(rank_sources.ranked_sources)}}\nITERATIONS: {{memory.iterations}}\n\n{{#if inputs.output_format == 'executive_brief'}}Create a 1-page executive brief with key findings and recommendations.{{/if}}\n{{#if inputs.output_format == 'full_report'}}Create a detailed report with sections: Executive Summary, Background, Key Findings, Analysis, Recommendations, Sources.{{/if}}\n{{#if inputs.output_format == 'markdown_doc'}}Create a well-formatted Markdown document suitable for documentation.{{/if}}\n{{#if inputs.output_format == 'structured_data'}}Output as structured JSON with all findings, suitable for further processing.{{/if}}\n\nInclude inline citations [1], [2] etc. and a references section."
+      },
+      "outputs": {
+        "report": "string"
+      }
+    },
+    {
+      "id": "calculate_confidence",
+      "name": "Calculate Confidence Score",
+      "action": "compute",
+      "inputs": {
+        "source_diversity": "{{length(unique(map(rank_sources.ranked_sources, 'domain')))}}",
+        "source_quality": "{{avg(map(rank_sources.ranked_sources, 'score'))}}",
+        "iterations": "{{memory.iterations}}",
+        "completeness": "{{critique.critique.overall_completeness}}"
+      },
+      "formula": "(source_quality * 0.3) + (min(source_diversity, 10) / 10 * 0.2) + (completeness * 0.4) + (min(iterations, 3) / 3 * 0.1)",
+      "outputs": {
+        "confidence_score": "number"
+      }
+    }
+  ],
+  
+  "outputs": {
+    "report": "{{generate_report.report}}",
+    "metadata": {
+      "topic": "{{inputs.topic}}",
+      "depth": "{{inputs.depth}}",
+      "sources_analyzed": "{{length(rank_sources.ranked_sources)}}",
+      "iterations": "{{memory.iterations}}",
+      "confidence_score": "{{calculate_confidence.confidence_score}}",
+      "gaps_remaining": "{{critique.critique.gaps}}",
+      "execution_time_ms": "{{runtime.duration}}"
+    },
+    "sources": "{{rank_sources.ranked_sources}}",
+    "raw_data": {
+      "extracted_facts": "{{memory.extracted_facts}}",
+      "synthesis": "{{synthesize.synthesis}}"
+    }
+  },
+  
+  "config": {
+    "fast_model": "gpt-4o-mini",
+    "worker_model": "gpt-4o",
+    "reasoning_model": "claude-3-5-sonnet",
+    "max_iterations": 3,
+    "parallel_fetches": 5,
+    "enable_caching": true,
+    "cache_ttl_hours": 24
+  },
+  
+  "cost_optimization": {
+    "use_fast_model_for": ["generate_queries", "rank_sources"],
+    "use_reasoning_model_for": ["synthesize", "self_critique"],
+    "estimated_cost": {
+      "quick": "$0.05-0.15",
+      "standard": "$0.15-0.50",
+      "deep": "$0.50-2.00"
+    }
+  },
+  
+  "examples": [
+    {
+      "name": "Quick Market Overview",
+      "inputs": {
+        "topic": "AI agent market size and growth projections 2026",
+        "depth": "quick",
+        "output_format": "executive_brief"
+      },
+      "expected_sources": 5,
+      "expected_time": "2-3 minutes"
+    },
+    {
+      "name": "Competitive Deep Dive",
+      "inputs": {
+        "topic": "Comparison of MCP protocol implementations across major AI frameworks",
+        "depth": "deep",
+        "output_format": "full_report",
+        "focus_areas": ["security", "performance", "adoption", "ecosystem"]
+      },
+      "expected_sources": 10,
+      "expected_time": "10-15 minutes"
+    },
+    {
+      "name": "Trend Analysis",
+      "inputs": {
+        "topic": "On-chain AI agents: revenue models and sustainability",
+        "depth": "standard",
+        "output_format": "structured_data",
+        "focus_areas": ["Solana agents", "revenue metrics", "scalability challenges"]
+      },
+      "expected_sources": 8,
+      "expected_time": "5-8 minutes"
+    }
+  ]
+}

@@ -1,0 +1,103 @@
+{
+  "$schema": "../_base/agent-toolkit-schema.json",
+  "metadata": {
+    "name": "adobe-firefly-pipeline",
+    "version": "0.1.0",
+    "description": "Image generation pipeline using Adobe Firefly via Agent Toolkit",
+    "author": "Vector",
+    "created": "2026-03-24",
+    "status": "scaffold",
+    "partner": "Adobe",
+    "toolkit_version": "1.0"
+  },
+  "agent": {
+    "name": "Firefly Creative Agent",
+    "model": "nemotron",
+    "description": "Generates and manages creative assets using Adobe Firefly"
+  },
+  "workflow": {
+    "steps": [
+      {
+        "id": "receive_request",
+        "type": "input",
+        "description": "Receive creative brief from user or system"
+      },
+      {
+        "id": "generate_image",
+        "type": "tool_call",
+        "tool": "adobe_firefly_generate",
+        "params": {
+          "prompt": "{{user_prompt}}",
+          "style": "{{style_preset}}",
+          "aspect_ratio": "{{aspect_ratio}}"
+        }
+      },
+      {
+        "id": "review_output",
+        "type": "human_in_loop",
+        "description": "Optional human review step",
+        "skip_condition": "auto_approve == true"
+      },
+      {
+        "id": "save_to_assets",
+        "type": "tool_call",
+        "tool": "adobe_assets_upload",
+        "params": {
+          "folder": "{{output_folder}}",
+          "naming": "{{naming_convention}}"
+        }
+      }
+    ]
+  },
+  "tools": [
+    {
+      "name": "adobe_firefly_generate",
+      "description": "Generate images using Adobe Firefly API",
+      "endpoint": "TODO: Firefly API endpoint",
+      "auth": "env:ADOBE_API_KEY"
+    },
+    {
+      "name": "adobe_assets_upload",
+      "description": "Upload to Adobe Experience Manager Assets",
+      "endpoint": "TODO: AEM Assets endpoint",
+      "auth": "env:ADOBE_API_KEY"
+    }
+  ],
+  "variables": {
+    "user_prompt": {
+      "type": "string",
+      "required": true,
+      "description": "Creative prompt for image generation"
+    },
+    "style_preset": {
+      "type": "string",
+      "default": "photo",
+      "options": ["photo", "art", "graphic", "3d"]
+    },
+    "aspect_ratio": {
+      "type": "string",
+      "default": "1:1",
+      "options": ["1:1", "16:9", "4:3", "9:16"]
+    },
+    "auto_approve": {
+      "type": "boolean",
+      "default": false
+    },
+    "output_folder": {
+      "type": "string",
+      "default": "/generated"
+    },
+    "naming_convention": {
+      "type": "string",
+      "default": "{{timestamp}}_{{prompt_slug}}"
+    }
+  },
+  "_notes": {
+    "TODO": [
+      "Obtain Adobe Firefly API access",
+      "Validate against actual API schema",
+      "Add error handling for rate limits",
+      "Implement content moderation check"
+    ]
+  }
+}

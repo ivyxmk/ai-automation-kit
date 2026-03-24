@@ -1,0 +1,136 @@
+{
+  "$schema": "../_base/agent-toolkit-schema.json",
+  "metadata": {
+    "name": "servicenow-ticket-triage",
+    "version": "0.1.0",
+    "description": "Automated IT ticket triage and resolution using ServiceNow",
+    "author": "Vector",
+    "created": "2026-03-24",
+    "status": "scaffold",
+    "partner": "ServiceNow",
+    "toolkit_version": "1.0"
+  },
+  "agent": {
+    "name": "IT Triage Agent",
+    "model": "nemotron",
+    "description": "Classifies, routes, and auto-resolves IT support tickets"
+  },
+  "workflow": {
+    "trigger": {
+      "type": "servicenow_event",
+      "event": "incident.created",
+      "conditions": ["state == 'New'"]
+    },
+    "steps": [
+      {
+        "id": "classify_ticket",
+        "type": "ai_inference",
+        "model": "nemotron",
+        "prompt": "Classify this IT ticket:\nSubject: {{short_description}}\nDescription: {{description}}\n\nCategories: Hardware, Software, Network, Access, Other\nUrgency: Low, Medium, High, Critical",
+        "output": {
+          "category": "string",
+          "urgency": "string",
+          "confidence": "number"
+        }
+      },
+      {
+        "id": "search_knowledge",
+        "type": "tool_call",
+        "tool": "servicenow_kb_search",
+        "params": {
+          "query": "{{short_description}}",
+          "category": "{{category}}",
+          "limit": 5
+        }
+      },
+      {
+        "id": "auto_resolve_check",
+        "type": "conditional",
+        "conditions": [
+          {
+            "if": "kb_match_score >= 0.9 AND urgency != 'Critical'",
+            "then": "attempt_auto_resolve"
+          },
+          {
+            "else": "route_to_agent"
+          }
+        ]
+      },
+      {
+        "id": "attempt_auto_resolve",
+        "type": "tool_call",
+        "tool": "servicenow_add_comment",
+        "params": {
+          "comment": "Based on your issue, here's a solution:\n\n{{kb_article_summary}}\n\nFull article: {{kb_article_link}}\n\nPlease try these steps and let us know if the issue is resolved.",
+          "work_notes": "Auto-resolution attempted via Agent Toolkit"
+        }
+      },
+      {
+        "id": "route_to_agent",
+        "type": "tool_call",
+        "tool": "servicenow_assign",
+        "params": {
+          "assignment_group": "{{category}}_support",
+          "priority": "{{urgency_to_priority}}"
+        }
+      },
+      {
+        "id": "update_ticket",
+        "type": "tool_call",
+        "tool": "servicenow_update",
+        "params": {
+          "category": "{{category}}",
+          "ai_classified": true,
+          "ai_confidence": "{{confidence}}"
+        }
+      }
+    ]
+  },
+  "tools": [
+    {
+      "name": "servicenow_kb_search",
+      "description": "Search ServiceNow Knowledge Base",
+      "endpoint": "TODO: ServiceNow KB API"
+    },
+    {
+      "name": "servicenow_add_comment",
+      "description": "Add comment to incident",
+      "endpoint": "TODO: ServiceNow Incident API"
+    },
+    {
+      "name": "servicenow_assign",
+      "description": "Assign incident to group",
+      "endpoint": "TODO: ServiceNow Assignment API"
+    },
+    {
+      "name": "servicenow_update",
+      "description": "Update incident fields",
+      "endpoint": "TODO: ServiceNow Incident API"
+    }
+  ],
+  "variables": {
+    "auto_resolve_threshold": {
+      "type": "number",
+      "default": 0.9,
+      "description": "Minimum KB match score for auto-resolution"
+    },
+    "assignment_groups": {
+      "type": "object",
+      "default": {
+        "Hardware": "hardware_support",
+        "Software": "software_support",
+        "Network": "network_ops",
+        "Access": "identity_team",
+        "Other": "service_desk"
+      }
+    }
+  },
+  "_notes": {
+    "TODO": [
+      "Integrate with ServiceNow IntegrationHub",
+      "Add sentiment analysis for escalation",
+      "Implement SLA tracking",
+      "Add Virtual Agent handoff capability"
+    ]
+  }
+}
