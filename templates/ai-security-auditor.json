@@ -1,0 +1,421 @@
+{
+  "name": "AI Security Auditor",
+  "description": "Automated security audit for AI/LLM applications - detects prompt injection vulnerabilities, API key exposure, data leakage risks, and agent permission issues",
+  "version": "1.0.0",
+  "trending": "2026-03 - GitHub AI-powered security detections, McKinsey Lilli breach (<2h to compromise), security incidents rising 340% YoY",
+  
+  "trigger": {
+    "type": "webhook | manual | scheduled | pr_event",
+    "config": {
+      "webhook_path": "/security-audit",
+      "pr_events": ["opened", "synchronize"],
+      "schedule": "0 9 * * 1",
+      "timeout_seconds": 300
+    }
+  },
+  
+  "inputs": {
+    "target": {
+      "type": "string",
+      "description": "Path to codebase, repo URL, or inline code to audit",
+      "required": true
+    },
+    "target_type": {
+      "type": "enum",
+      "options": ["repo", "directory", "file", "inline"],
+      "default": "directory"
+    },
+    "audit_depth": {
+      "type": "enum",
+      "options": ["quick", "standard", "comprehensive"],
+      "default": "standard",
+      "description": "Depth of security analysis"
+    },
+    "focus_areas": {
+      "type": "array",
+      "options": ["prompt_injection", "api_keys", "data_leakage", "agent_permissions", "supply_chain", "model_security"],
+      "default": ["prompt_injection", "api_keys", "data_leakage", "agent_permissions"]
+    },
+    "output_format": {
+      "type": "enum",
+      "options": ["report", "sarif", "json", "markdown"],
+      "default": "report",
+      "description": "Output format - SARIF for GitHub integration"
+    },
+    "severity_threshold": {
+      "type": "enum",
+      "options": ["critical", "high", "medium", "low"],
+      "default": "medium",
+      "description": "Minimum severity to report"
+    }
+  },
+  
+  "security_checks": {
+    "prompt_injection": {
+      "name": "Prompt Injection Vulnerabilities",
+      "description": "Detect user input paths that reach LLM prompts without sanitization",
+      "severity_range": "high-critical",
+      "patterns": [
+        "user_input_to_prompt",
+        "template_string_interpolation",
+        "missing_input_validation",
+        "system_prompt_exposure",
+        "jailbreak_susceptibility"
+      ]
+    },
+    "api_keys": {
+      "name": "API Key & Secret Exposure",
+      "description": "Find hardcoded or leaked API keys for AI services",
+      "severity_range": "critical",
+      "patterns": [
+        "hardcoded_openai_key",
+        "hardcoded_anthropic_key",
+        "env_file_in_repo",
+        "key_in_logs",
+        "key_in_error_messages",
+        "insecure_key_storage"
+      ]
+    },
+    "data_leakage": {
+      "name": "Data Leakage & PII Exposure",
+      "description": "Identify paths where sensitive data could reach external LLMs",
+      "severity_range": "medium-critical",
+      "patterns": [
+        "pii_to_external_llm",
+        "no_data_masking",
+        "logging_sensitive_prompts",
+        "response_caching_pii",
+        "training_data_exposure"
+      ]
+    },
+    "agent_permissions": {
+      "name": "Agent Permission Boundaries",
+      "description": "Validate agents operate within intended permission scope",
+      "severity_range": "high-critical",
+      "patterns": [
+        "overprivileged_tools",
+        "missing_confirmation_gates",
+        "unbounded_loops",
+        "unrestricted_file_access",
+        "unrestricted_network_access",
+        "shell_command_injection"
+      ]
+    },
+    "supply_chain": {
+      "name": "AI Supply Chain Risks",
+      "description": "Check for vulnerable dependencies and untrusted model sources",
+      "severity_range": "medium-high",
+      "patterns": [
+        "vulnerable_ai_packages",
+        "untrusted_model_sources",
+        "model_poisoning_vectors",
+        "unverified_plugins",
+        "deprecated_api_versions"
+      ]
+    },
+    "model_security": {
+      "name": "Model Security Configuration",
+      "description": "Validate model configuration and deployment security",
+      "severity_range": "medium-high",
+      "patterns": [
+        "insecure_model_endpoint",
+        "missing_rate_limiting",
+        "no_output_filtering",
+        "excessive_token_limits",
+        "missing_content_filters"
+      ]
+    }
+  },
+  
+  "steps": [
+    {
+      "id": "init",
+      "name": "Initialize Security Audit",
+      "action": "memory_init",
+      "inputs": {
+        "target": "{{inputs.target}}",
+        "started_at": "{{now()}}",
+        "findings": [],
+        "files_scanned": 0,
+        "checks_passed": 0,
+        "checks_failed": 0
+      }
+    },
+    {
+      "id": "discover_files",
+      "name": "Discover AI-Related Files",
+      "action": "file_discovery",
+      "inputs": {
+        "target": "{{inputs.target}}",
+        "target_type": "{{inputs.target_type}}",
+        "patterns": [
+          "**/*.py",
+          "**/*.js",
+          "**/*.ts",
+          "**/*.json",
+          "**/*.yaml",
+          "**/*.yml",
+          "**/*.env*",
+          "**/*.md",
+          "**/Dockerfile*",
+          "**/*.tf"
+        ],
+        "ai_indicators": [
+          "openai", "anthropic", "langchain", "llama", "gpt", "claude",
+          "embedding", "prompt", "completion", "chat", "agent", "tool",
+          "OPENAI_API_KEY", "ANTHROPIC_API_KEY", "HF_TOKEN"
+        ]
+      },
+      "outputs": {
+        "ai_files": "array",
+        "config_files": "array",
+        "total_files": "number"
+      }
+    },
+    {
+      "id": "static_scan",
+      "name": "Static Pattern Scanning",
+      "action": "regex_scan",
+      "inputs": {
+        "files": "{{discover_files.ai_files}}",
+        "patterns": {
+          "api_keys": [
+            "sk-[a-zA-Z0-9]{48}",
+            "sk-proj-[a-zA-Z0-9]{48}",
+            "sk-ant-[a-zA-Z0-9-]{95}",
+            "AIza[0-9A-Za-z\\-_]{35}",
+            "hf_[a-zA-Z0-9]{34}"
+          ],
+          "dangerous_patterns": [
+            "eval\\s*\\(",
+            "exec\\s*\\(",
+            "subprocess\\.call.*shell=True",
+            "os\\.system\\s*\\(",
+            "child_process\\.exec"
+          ],
+          "input_flows": [
+            "request\\.(body|query|params)",
+            "input\\s*\\(",
+            "sys\\.argv",
+            "process\\.env"
+          ]
+        }
+      },
+      "outputs": {
+        "static_findings": "array"
+      }
+    },
+    {
+      "id": "llm_analysis",
+      "name": "AI-Powered Deep Analysis",
+      "action": "map_reduce",
+      "phase": "analysis",
+      "map": {
+        "input": "{{discover_files.ai_files}}",
+        "prompt": "You are an AI security expert. Analyze this code for security vulnerabilities specific to AI/LLM applications.\n\nFILE: {{item.path}}\nCONTENT:\n```\n{{item.content}}\n```\n\nCheck for:\n{{#each inputs.focus_areas}}\n- {{this}}\n{{/each}}\n\nFor each finding, provide:\n1. vulnerability_type: Category of the issue\n2. severity: critical|high|medium|low\n3. line_numbers: Affected lines\n4. description: Clear explanation of the risk\n5. evidence: Code snippet showing the issue\n6. remediation: Specific fix recommendation\n7. cwe_id: Relevant CWE identifier if applicable\n\nOutput JSON: {\"findings\": [{...}], \"risk_score\": 0-100, \"summary\": \"...\"}"
+      },
+      "reduce": {
+        "prompt": "Combine all security findings, deduplicate similar issues, and prioritize by severity and exploitability.\n\nOutput JSON with unified findings array sorted by severity."
+      },
+      "outputs": {
+        "ai_findings": "object"
+      }
+    },
+    {
+      "id": "prompt_injection_test",
+      "name": "Prompt Injection Testing",
+      "condition": "{{includes(inputs.focus_areas, 'prompt_injection')}}",
+      "action": "llm_call",
+      "inputs": {
+        "prompt": "Analyze these code files for prompt injection vulnerabilities.\n\nFILES WITH PROMPT HANDLING:\n{{json(filter(discover_files.ai_files, 'has_prompts'))}}\n\nFor each file, trace:\n1. Where does user input enter the system?\n2. How does it flow to LLM prompts?\n3. What sanitization/validation exists?\n4. Can an attacker manipulate the system prompt?\n5. Are there any prompt leakage risks?\n\nGenerate test payloads that would reveal vulnerabilities (do not execute).\n\nOutput JSON: {\"injection_vectors\": [{\"file\": \"...\", \"entry_point\": \"...\", \"reaches_prompt\": true/false, \"sanitization\": \"none|partial|strong\", \"test_payloads\": [...], \"risk_level\": \"...\"}]}"
+      },
+      "outputs": {
+        "injection_analysis": "object"
+      }
+    },
+    {
+      "id": "agent_boundary_check",
+      "name": "Agent Permission Boundary Analysis",
+      "condition": "{{includes(inputs.focus_areas, 'agent_permissions')}}",
+      "action": "llm_call",
+      "inputs": {
+        "prompt": "Analyze this codebase for agent permission and boundary issues.\n\nAI-RELATED FILES:\n{{json(discover_files.ai_files)}}\n\nCheck for:\n1. TOOL PERMISSIONS: What tools/functions can agents call? Are they overprivileged?\n2. CONFIRMATION GATES: Are dangerous actions (delete, send, execute) confirmed?\n3. LOOP SAFETY: Can agents get stuck in infinite loops? Max iteration limits?\n4. FILE ACCESS: What files can agents read/write? Is it scoped correctly?\n5. NETWORK ACCESS: Can agents make arbitrary network requests?\n6. COMMAND EXECUTION: Can agents run shell commands? How is this restricted?\n\nOutput JSON: {\"boundary_issues\": [{\"type\": \"...\", \"severity\": \"...\", \"description\": \"...\", \"file\": \"...\", \"recommendation\": \"...\"}], \"permission_matrix\": {...}, \"risk_assessment\": \"...\"}"
+      },
+      "outputs": {
+        "boundary_analysis": "object"
+      }
+    },
+    {
+      "id": "dependency_check",
+      "name": "AI Dependency Vulnerability Scan",
+      "condition": "{{includes(inputs.focus_areas, 'supply_chain')}}",
+      "action": "tool_call",
+      "tool": "dependency_scan",
+      "inputs": {
+        "files": ["requirements.txt", "package.json", "pyproject.toml", "Pipfile"],
+        "ai_packages": [
+          "openai", "anthropic", "langchain", "llama-index", "transformers",
+          "tiktoken", "chromadb", "pinecone-client", "weaviate-client"
+        ]
+      },
+      "outputs": {
+        "vulnerable_deps": "array"
+      }
+    },
+    {
+      "id": "consolidate_findings",
+      "name": "Consolidate All Findings",
+      "action": "llm_call",
+      "inputs": {
+        "prompt": "Consolidate all security findings into a unified report.\n\nSTATIC SCAN:\n{{json(static_scan.static_findings)}}\n\nAI ANALYSIS:\n{{json(llm_analysis.ai_findings)}}\n\n{{#if prompt_injection_test.injection_analysis}}INJECTION ANALYSIS:\n{{json(prompt_injection_test.injection_analysis)}}{{/if}}\n\n{{#if agent_boundary_check.boundary_analysis}}BOUNDARY ANALYSIS:\n{{json(agent_boundary_check.boundary_analysis)}}{{/if}}\n\n{{#if dependency_check.vulnerable_deps}}VULNERABLE DEPENDENCIES:\n{{json(dependency_check.vulnerable_deps)}}{{/if}}\n\nProduce:\n1. Deduplicated findings sorted by severity\n2. Overall risk score (0-100)\n3. Executive summary\n4. Prioritized remediation roadmap\n\nApply severity threshold: Only include {{inputs.severity_threshold}} and above.\n\nOutput JSON: {\"findings\": [...], \"risk_score\": N, \"summary\": \"...\", \"remediation_roadmap\": [{\"priority\": 1, \"action\": \"...\", \"effort\": \"...\", \"impact\": \"...\"}]}"
+      },
+      "outputs": {
+        "consolidated": "object"
+      }
+    },
+    {
+      "id": "generate_output",
+      "name": "Generate Final Report",
+      "action": "conditional",
+      "conditions": [
+        {
+          "if": "{{inputs.output_format}} == 'sarif'",
+          "then": {
+            "action": "transform",
+            "template": "sarif",
+            "inputs": {
+              "findings": "{{consolidated.findings}}",
+              "tool_name": "ai-security-auditor",
+              "tool_version": "1.0.0"
+            }
+          }
+        },
+        {
+          "if": "{{inputs.output_format}} == 'report'",
+          "then": {
+            "action": "llm_call",
+            "prompt": "Generate a professional security audit report.\n\nFINDINGS: {{json(consolidated)}}\nAUDIT TARGET: {{inputs.target}}\nAUDIT DEPTH: {{inputs.audit_depth}}\n\nFormat as a security audit report with:\n- Executive Summary\n- Risk Score & Rating (Critical/High/Medium/Low)\n- Findings by Category\n- Detailed Finding Descriptions (with code snippets)\n- Remediation Recommendations\n- Compliance Notes (SOC2, GDPR implications)\n- Next Steps\n\nUse professional security report language."
+          }
+        }
+      ],
+      "default": {
+        "action": "passthrough",
+        "value": "{{consolidated}}"
+      }
+    }
+  ],
+  
+  "outputs": {
+    "report": "{{generate_output.result}}",
+    "findings": "{{consolidate_findings.consolidated.findings}}",
+    "risk_score": "{{consolidate_findings.consolidated.risk_score}}",
+    "risk_rating": "{{risk_score >= 80 ? 'CRITICAL' : risk_score >= 60 ? 'HIGH' : risk_score >= 40 ? 'MEDIUM' : 'LOW'}}",
+    "summary": "{{consolidate_findings.consolidated.summary}}",
+    "metadata": {
+      "target": "{{inputs.target}}",
+      "audit_depth": "{{inputs.audit_depth}}",
+      "files_scanned": "{{discover_files.total_files}}",
+      "ai_files_found": "{{length(discover_files.ai_files)}}",
+      "findings_count": {
+        "critical": "{{count(findings, severity='critical')}}",
+        "high": "{{count(findings, severity='high')}}",
+        "medium": "{{count(findings, severity='medium')}}",
+        "low": "{{count(findings, severity='low')}}"
+      },
+      "execution_time_ms": "{{runtime.duration}}"
+    },
+    "sarif": "{{inputs.output_format == 'sarif' ? generate_output.result : null}}"
+  },
+  
+  "config": {
+    "analysis_model": "claude-3-5-sonnet",
+    "fast_model": "gpt-4o-mini",
+    "max_file_size_kb": 500,
+    "max_files_per_scan": 100,
+    "enable_caching": true,
+    "cache_ttl_hours": 1,
+    "parallel_analysis": 5
+  },
+  
+  "integrations": {
+    "github": {
+      "pr_comment": true,
+      "status_check": true,
+      "sarif_upload": true,
+      "security_tab": true
+    },
+    "slack": {
+      "notify_on": ["critical", "high"],
+      "channel": "#security-alerts"
+    },
+    "jira": {
+      "create_issues": true,
+      "project_key": "SEC",
+      "severity_mapping": {
+        "critical": "Blocker",
+        "high": "Critical",
+        "medium": "Major",
+        "low": "Minor"
+      }
+    }
+  },
+  
+  "cost_optimization": {
+    "use_fast_model_for": ["discover_files", "static_scan"],
+    "use_analysis_model_for": ["llm_analysis", "prompt_injection_test", "agent_boundary_check"],
+    "estimated_cost": {
+      "quick": "$0.02-0.10",
+      "standard": "$0.10-0.30",
+      "comprehensive": "$0.30-1.00"
+    }
+  },
+  
+  "examples": [
+    {
+      "name": "PR Security Gate",
+      "description": "Run on every PR to catch AI security issues before merge",
+      "inputs": {
+        "target": "./",
+        "target_type": "directory",
+        "audit_depth": "quick",
+        "focus_areas": ["prompt_injection", "api_keys"],
+        "output_format": "sarif",
+        "severity_threshold": "high"
+      },
+      "expected_time": "30-60 seconds"
+    },
+    {
+      "name": "Weekly Full Audit",
+      "description": "Comprehensive weekly security review",
+      "inputs": {
+        "target": "https://github.com/org/ai-app",
+        "target_type": "repo",
+        "audit_depth": "comprehensive",
+        "focus_areas": ["prompt_injection", "api_keys", "data_leakage", "agent_permissions", "supply_chain", "model_security"],
+        "output_format": "report",
+        "severity_threshold": "low"
+      },
+      "expected_time": "5-10 minutes"
+    },
+    {
+      "name": "Agent Permission Review",
+      "description": "Focused review of agent boundaries and permissions",
+      "inputs": {
+        "target": "./agents/",
+        "target_type": "directory",
+        "audit_depth": "standard",
+        "focus_areas": ["agent_permissions", "prompt_injection"],
+        "output_format": "json"
+      },
+      "expected_time": "2-3 minutes"
+    }
+  ],
+  
+  "cwe_mappings": {
+    "prompt_injection": ["CWE-77", "CWE-94"],
+    "api_key_exposure": ["CWE-798", "CWE-312"],
+    "data_leakage": ["CWE-200", "CWE-359"],
+    "command_injection": ["CWE-78"],
+    "excessive_permissions": ["CWE-250", "CWE-269"]
+  }
+}

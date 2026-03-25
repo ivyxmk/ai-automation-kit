@@ -16,7 +16,9 @@ Ready-to-use workflow templates for common automation patterns:
 - Content repurposing pipeline
 - Meeting summarization
 - Browser automation & scraping
-- **Multi-agent orchestration** ⭐ *NEW - coordinate specialized AI agents*
+- Multi-agent orchestration
+- Autonomous research agent
+- **AI Security Auditor** ⭐ *NEW - detect prompt injection, API key exposure, data leakage*
 
 ### 📁 `/prompts`
 Battle-tested GPT prompts optimized for automation:
@@ -63,6 +65,8 @@ Implementation guides:
 | Content bottleneck | Repurposing automation | `content-repurpose.json` |
 | Complex multi-step tasks | Multi-agent orchestration | `multi-agent-orchestrator.json` |
 | Web data collection | Browser automation | `browser-automation.json` |
+| Deep research reports | Self-evolving research agent | `autonomous-research-agent.json` |
+| AI security vulnerabilities | Automated security auditing | `ai-security-auditor.json` |
 
 ---
 

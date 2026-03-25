@@ -2,6 +2,26 @@
 
 All notable changes to the AI Automation Starter Kit.
 
+## [1.0.7] - 2026-03-25
+
+### Added
+
+**Templates:**
+- `ai-security-auditor.json` - Automated security audit for AI/LLM applications. Detects prompt injection vulnerabilities, API key exposure, data leakage risks, and agent permission boundary issues. Features static pattern scanning + AI-powered deep analysis, SARIF output for GitHub integration, and integration with GitHub PR workflows, Slack, and Jira.
+
+**Key Features:**
+- 6 security check categories: prompt_injection, api_keys, data_leakage, agent_permissions, supply_chain, model_security
+- 3 audit depths: quick ($0.02-0.10), standard ($0.10-0.30), comprehensive ($0.30-1.00)
+- SARIF output for GitHub Code Security integration
+- CWE mappings for compliance reporting
+- PR-triggered security gates
+
+### Notes
+
+Trending: GitHub announced AI-powered security detections (March 23), McKinsey's "Lilli" agent was compromised in <2h, security incidents in AI apps up 340% YoY. AI security auditing is now critical for production deployments.
+
+---
+
 ## [1.0.6] - 2026-03-24
 
 ### Added
